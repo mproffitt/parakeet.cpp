@@ -235,4 +235,18 @@ bool gguf_is_vad_only(const std::string& path) {
     return ok;
 }
 
+bool gguf_parakeet_arch(const std::string& path, std::string& arch, std::string* err) {
+    arch.clear();
+    gguf_init_params ip{/*no_alloc=*/true, /*ctx=*/nullptr};
+    gguf_context* g = gguf_init_from_file(path.c_str(), ip);
+    if (!g) {
+        if (err) *err = "cannot read " + path + " as a GGUF file";
+        return false;
+    }
+    const int64_t id = gguf_find_key(g, "parakeet.arch");
+    if (id >= 0 && gguf_get_kv_type(g, id) == GGUF_TYPE_STRING) arch = gguf_get_val_str(g, id);
+    gguf_free(g);
+    return true;
+}
+
 }  // namespace pk

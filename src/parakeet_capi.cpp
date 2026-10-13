@@ -508,6 +508,37 @@ extern "C" char* parakeet_capi_bundle_components_json(const char* gguf_path) {
     } catch (...) { g_load_error = "unknown error"; return nullptr; }
 }
 
+// The same dispatch as load_plain, on the header alone.
+extern "C" char* parakeet_capi_probe_json(const char* gguf_path) {
+    g_load_error.clear();
+    if (!gguf_path) { g_load_error = "path is NULL"; return nullptr; }
+    try {
+        std::string err;
+        std::string arch;
+        if (!pk::gguf_parakeet_arch(gguf_path, arch, &err)) { g_load_error = err; return nullptr; }
+        std::string kind;
+        if (pk::gguf_is_bundle(gguf_path)) {
+            pk::BundleInfo info;
+            if (!pk::read_bundle_info(gguf_path, info, &err)) { g_load_error = err; return nullptr; }
+            char* out = dup_to_c(R"({"kind":"bundle","components":)" + pk::bundle_components_json(info) + "}");
+            if (!out) g_load_error = "out of memory";
+            return out;
+        }
+        if (pk::gguf_is_ced(gguf_path)) kind = "sound";
+        else if (pk::gguf_is_silero(gguf_path) || arch == "vad") kind = "vad";
+        else if (pk::gguf_is_voicedetect(gguf_path)) kind = "speaker";
+        else if (arch == "diarization") kind = "diarization";
+        else if (!arch.empty()) kind = "asr";
+        else {
+            g_load_error = std::string(gguf_path) + " is not a parakeet model (no known architecture key)";
+            return nullptr;
+        }
+        char* out = dup_to_c(R"({"kind":")" + kind + "\"}");
+        if (!out) g_load_error = "out of memory";
+        return out;
+    } catch (...) { g_load_error = "unknown error"; return nullptr; }
+}
+
 extern "C" const char* parakeet_capi_load_error(void) {
     return g_load_error.c_str();
 }

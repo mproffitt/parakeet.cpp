@@ -54,6 +54,9 @@ bool gguf_is_silero(const std::string& gguf_path);
 // True when the GGUF's parakeet.arch is "vad": a VAD-only slice of an Ultra or
 // Redux model (scripts/slice_vad_gguf.py). Reads only the header.
 bool gguf_is_vad_only(const std::string& gguf_path);
+// The file's "parakeet.arch" (header only). False, with *err set, when the file is
+// not a readable GGUF; true with an empty arch when it has no such key.
+bool gguf_parakeet_arch(const std::string& gguf_path, std::string& arch, std::string* err);
 
 // Runs the VAD head over 16 kHz mono PCM and returns the JSON document
 // {"mode","duration","frame_sec","backend","segments":[{"start","end"}],

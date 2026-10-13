@@ -116,8 +116,19 @@ parakeet_ctx* parakeet_capi_load_component(const char* gguf_path, const char* co
 // malformed or has a newer format version than this build reads.
 char* parakeet_capi_bundle_components_json(const char* gguf_path);
 
+// Additive: the kind of model a GGUF holds, as a malloc'd JSON object (free with
+// parakeet_capi_free_string), read from the header only: no tensor is loaded, so
+// a caller can list a directory of models cheaply. {"kind": K} with K one of
+// "asr", "diarization", "vad", "sound", "speaker" (the kinds of
+// parakeet_capi_model_kind), or "bundle" with "components" holding
+// parakeet_capi_bundle_components_json's array. NULL (reason in
+// parakeet_capi_load_error) when the file is not a GGUF, is not a parakeet model,
+// or is a malformed bundle.
+char* parakeet_capi_probe_json(const char* gguf_path);
+
 // Additive: the reason the last parakeet_capi_load, parakeet_capi_load_component,
-// parakeet_capi_bundle_components_json, parakeet_capi_set_device or
+// parakeet_capi_bundle_components_json, parakeet_capi_probe_json,
+// parakeet_capi_set_device or
 // parakeet_capi_release_backend call on this thread failed. Valid until the next
 // of those calls on the same thread; never NULL.
 const char* parakeet_capi_load_error(void);
