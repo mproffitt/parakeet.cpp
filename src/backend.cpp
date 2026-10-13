@@ -74,25 +74,57 @@ struct Backend::Impl {
 // a single pointer is sufficient.
 static thread_local Backend* t_active = nullptr;
 
+namespace {
+// Case-insensitive equality, used to match a requested device against the
+// registry's device names (which are upper-case like "CUDA0"/"Vulkan0").
+bool iequals(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i]))
+            return false;
+    return true;
+}
+
+// Set through the C API (parakeet_capi_set_device); "" defers to PARAKEET_DEVICE.
+std::mutex  g_device_mutex;
+std::string g_device_request;
+
+std::string requested_device() {
+    {
+        std::lock_guard<std::mutex> lock(g_device_mutex);
+        if (!g_device_request.empty()) return g_device_request;
+    }
+    const char* env = std::getenv("PARAKEET_DEVICE");
+    return env ? env : "";
+}
+} // namespace
+
+void set_device_request(const std::string& device) {
+    std::lock_guard<std::mutex> lock(g_device_mutex);
+    g_device_request = device;
+}
+
+bool device_known(const std::string& device, std::string* names) {
+    if (iequals(device, "cpu")) return true;
+    std::string all = "cpu";
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        const char* name = ggml_backend_dev_name(ggml_backend_dev_get(i));
+        if (!name) continue;
+        if (iequals(device, name)) return true;
+        all += std::string(", ") + name;
+    }
+    if (names) *names = all;
+    return false;
+}
+
 Backend::Backend(int n_threads, bool cpu_only) : impl_(new Impl()) {
-    // Optional override via PARAKEET_DEVICE:
+    // Optional override via parakeet_capi_set_device, else PARAKEET_DEVICE:
     //   - "cpu"            forces the CPU backend (CPU baseline on a GPU box).
     //   - a device name    selects that specific registry device by name, e.g.
     //                      "CUDA0", "Vulkan1", "Metal" (case-insensitive).
     //   - unset            auto-pick the first GPU / integrated-GPU device.
-    const char* force = std::getenv("PARAKEET_DEVICE");
-    const std::string want = force ? force : "";
-    const bool force_cpu = cpu_only || want == "cpu" || want == "CPU";
-
-    // Case-insensitive equality, used to match PARAKEET_DEVICE against the
-    // registry's device names (which are upper-case like "CUDA0"/"Vulkan0").
-    auto iequals = [](const std::string& a, const std::string& b) {
-        if (a.size() != b.size()) return false;
-        for (size_t i = 0; i < a.size(); ++i)
-            if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i]))
-                return false;
-        return true;
-    };
+    const std::string want = requested_device();
+    const bool force_cpu = cpu_only || iequals(want, "cpu");
 
     if (!force_cpu) {
         // Walk the registry. Whatever backend was compiled in
@@ -126,7 +158,7 @@ Backend::Backend(int n_threads, bool cpu_only) : impl_(new Impl()) {
             }
         }
         if (!want.empty() && !impl_->backend)
-            PK_LOG("pk::Backend: PARAKEET_DEVICE=%s not found; falling back to CPU",
+            PK_LOG("pk::Backend: device %s not found; falling back to CPU",
                    want.c_str());
     }
     if (!impl_->backend) {              // CPU fallback (or CPU-only build)

@@ -109,6 +109,15 @@ private:
     std::string device_name_ = "cpu";
 };
 
+// The device a Backend created from now on uses, in place of PARAKEET_DEVICE:
+// "cpu" (any case), a registry device name, or "" for the default (PARAKEET_DEVICE,
+// else the first GPU). A Backend that already exists keeps its device.
+void set_device_request(const std::string& device);
+
+// Whether `device` is "cpu" (any case) or names a registry device. When it does
+// not, `*names` lists the devices there are.
+bool device_known(const std::string& device, std::string* names);
+
 // Register a host-backed graph input for the currently-active Backend::compute
 // build phase. Marks `t` as a ggml graph input and records that `nbytes` from
 // `host` must be copied into `t` AFTER the graph is allocated. Must be called

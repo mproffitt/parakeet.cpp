@@ -81,6 +81,8 @@ typedef struct parakeet_ctx parakeet_ctx;
 // Speaker embedding output (parakeet_capi_speaker_embed_pcm, parakeet_capi_free_floats)
 //      is additive and keeps ABI v10: a caller that needs them checks for the symbols
 //      (dlsym).
+// Device selection and backend release (parakeet_capi_set_device,
+//      parakeet_capi_release_backend) are additive and keep ABI v10.
 int parakeet_capi_abi_version(void);
 
 // Load a GGUF model. Returns an owning context, or NULL on failure.
@@ -113,13 +115,35 @@ parakeet_ctx* parakeet_capi_load_component(const char* gguf_path, const char* co
 // malformed or has a newer format version than this build reads.
 char* parakeet_capi_bundle_components_json(const char* gguf_path);
 
-// Additive: the reason the last parakeet_capi_load, parakeet_capi_load_component
-// or parakeet_capi_bundle_components_json call on this thread failed. Valid
-// until the next of those calls on the same thread; never NULL.
+// Additive: the reason the last parakeet_capi_load, parakeet_capi_load_component,
+// parakeet_capi_bundle_components_json, parakeet_capi_set_device or
+// parakeet_capi_release_backend call on this thread failed. Valid until the next
+// of those calls on the same thread; never NULL.
 const char* parakeet_capi_load_error(void);
 
 // Free a context obtained from parakeet_capi_load. Safe on NULL.
 void parakeet_capi_free(parakeet_ctx* ctx);
+
+// Additive (no ABI bump): the compute device. Every context in a process runs on
+// one backend, created on a device when the first model loads. These two let a
+// long-running process choose that device per load, and give the device memory
+// back between loads, without restarting.
+//
+// parakeet_capi_set_device picks the device the next load uses, in place of the
+// PARAKEET_DEVICE environment variable: "cpu" (any case), a ggml device name
+// such as "CUDA0" or "Vulkan1" (any case), or NULL or "" for the default
+// (PARAKEET_DEVICE if set, else the first GPU, else the CPU). It frees the
+// current backend so the next load creates one on that device.
+//
+// parakeet_capi_release_backend frees the backend and the device memory its
+// graph buffers hold. The next load creates a new one.
+//
+// Both need every context freed first (their weights live on the backend's
+// device) and return non-zero, with the reason in parakeet_capi_load_error, when
+// one is still loaded; parakeet_capi_set_device also when the device does not
+// exist. They return 0 on success. A load on another thread waits for them.
+int parakeet_capi_set_device(const char* device);
+int parakeet_capi_release_backend(void);
 
 // Transcribe a WAV file. `decoder` selects the head:
 //   0 = default (by arch: transducer for tdt/rnnt/hybrid, CTC for ctc),

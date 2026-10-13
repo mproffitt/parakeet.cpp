@@ -195,6 +195,8 @@ parakeet-cli bench-decode ... | bench-batch ...                 # batched decode
 
 Device selection is automatic: the CLI uses the first GPU the ggml registry reports. Set `PARAKEET_DEVICE=cpu` to force CPU, or a device name such as `CUDA0` or `Vulkan1`. Ops that a backend lacks run on the CPU.
 
+Through the C API, `parakeet_capi_set_device` picks the device for the next load in place of `PARAKEET_DEVICE`, and `parakeet_capi_release_backend` gives the device memory back once every context is freed, so a long-running process can move between the GPU and the CPU without restarting.
+
 ---
 
 ## Server and Docker

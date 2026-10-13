@@ -24,8 +24,11 @@
 #include "silero_vad.hpp"
 #include "bundle.hpp"
 #include "audio_io.hpp"
+#include "backend.hpp"
+#include "ggml_graph.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -37,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <new>
+#include <shared_mutex>
 #include <string>
 #include <vector>
 
@@ -100,7 +104,22 @@ private:
 // ASR models use `model`, diarization models (Sortformer) use `diar`, CED
 // sound-event taggers use `tagger`, voice-detect speaker encoders use `speaker`,
 // Silero VAD models use `silero`.
+//
+// Contexts are counted: their weights live on the process backend's device, so
+// parakeet_capi_release_backend and parakeet_capi_set_device refuse while any
+// exists. `live` is the first member so it is destroyed last, after the models.
+namespace {
+std::atomic<int> g_live_contexts{0};
+struct LiveContext {
+    LiveContext()  { g_live_contexts.fetch_add(1); }
+    ~LiveContext() { g_live_contexts.fetch_sub(1); }
+    LiveContext(const LiveContext&) = delete;
+    LiveContext& operator=(const LiveContext&) = delete;
+};
+} // namespace
+
 struct parakeet_ctx {
+    LiveContext live;
     std::unique_ptr<pk::Model> model;
     std::unique_ptr<pk::Model> vad_model;    // VAD-only slice (parakeet.arch "vad"): VAD calls only
     std::unique_ptr<pk::DiarizationModel> diar;
@@ -409,14 +428,64 @@ parakeet_ctx* load_plain(const char* gguf_path) {
 
 } // namespace
 
+namespace {
+// Loads share it; releasing the backend or changing its device takes it alone,
+// so neither happens while a load is putting weights on the backend.
+std::shared_mutex g_backend_owner;
+
+// Why the backend cannot be released or moved, or "" when it can. Caller holds
+// g_backend_owner exclusively.
+std::string backend_in_use() {
+    const int n = g_live_contexts.load();
+    if (n == 0) return "";
+    return std::to_string(n) + " context" + (n == 1 ? " is" : "s are") +
+           " still loaded: free them with parakeet_capi_free first";
+}
+} // namespace
+
 extern "C" parakeet_ctx* parakeet_capi_load(const char* gguf_path) {
-    try { return load_impl(gguf_path, nullptr); }
+    try {
+        std::shared_lock<std::shared_mutex> lock(g_backend_owner);
+        return load_impl(gguf_path, nullptr);
+    }
     catch (...) { g_load_error = "unknown error"; return nullptr; }
 }
 
 extern "C" parakeet_ctx* parakeet_capi_load_component(const char* gguf_path, const char* component) {
-    try { return load_impl(gguf_path, component); }
+    try {
+        std::shared_lock<std::shared_mutex> lock(g_backend_owner);
+        return load_impl(gguf_path, component);
+    }
     catch (...) { g_load_error = "unknown error"; return nullptr; }
+}
+
+extern "C" int parakeet_capi_set_device(const char* device) {
+    g_load_error.clear();
+    try {
+        const std::string want = device ? device : "";
+        std::string names;
+        if (!want.empty() && !pk::device_known(want, &names)) {
+            g_load_error = "no device \"" + want + "\"; devices: " + names;
+            return 1;
+        }
+        std::unique_lock<std::shared_mutex> lock(g_backend_owner);
+        g_load_error = backend_in_use();
+        if (!g_load_error.empty()) return 1;
+        pk::set_device_request(want);
+        pk::shutdown_backend();
+        return 0;
+    } catch (...) { g_load_error = "unknown error"; return 1; }
+}
+
+extern "C" int parakeet_capi_release_backend(void) {
+    g_load_error.clear();
+    try {
+        std::unique_lock<std::shared_mutex> lock(g_backend_owner);
+        g_load_error = backend_in_use();
+        if (!g_load_error.empty()) return 1;
+        pk::shutdown_backend();
+        return 0;
+    } catch (...) { g_load_error = "unknown error"; return 1; }
 }
 
 extern "C" char* parakeet_capi_bundle_components_json(const char* gguf_path) {
