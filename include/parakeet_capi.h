@@ -82,7 +82,8 @@ typedef struct parakeet_ctx parakeet_ctx;
 //      is additive and keeps ABI v10: a caller that needs them checks for the symbols
 //      (dlsym).
 // Device selection and backend release (parakeet_capi_set_device,
-//      parakeet_capi_release_backend) are additive and keep ABI v10.
+//      parakeet_capi_release_backend, parakeet_capi_default_device) are additive
+//      and keep ABI v10.
 int parakeet_capi_abi_version(void);
 
 // Load a GGUF model. Returns an owning context, or NULL on failure.
@@ -144,6 +145,12 @@ void parakeet_capi_free(parakeet_ctx* ctx);
 // exist. They return 0 on success. A load on another thread waits for them.
 int parakeet_capi_set_device(const char* device);
 int parakeet_capi_release_backend(void);
+
+// Additive: the device the next load uses, without loading anything: the
+// parakeet_capi_set_device choice, else PARAKEET_DEVICE, else the first GPU,
+// else "cpu". A name that matches no device reads "cpu", which is where such a
+// load runs. Never NULL; valid until the next call on the same thread.
+const char* parakeet_capi_default_device(void);
 
 // Transcribe a WAV file. `decoder` selects the head:
 //   0 = default (by arch: transducer for tdt/rnnt/hybrid, CTC for ctc),

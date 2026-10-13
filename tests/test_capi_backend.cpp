@@ -60,6 +60,19 @@ static void device_checks() {
 
     check(parakeet_capi_release_backend() == 0, "release_backend with nothing loaded");
     check(parakeet_capi_release_backend() == 0, "release_backend twice");
+
+    check(parakeet_capi_set_device("cpu") == 0, "set_device(\"cpu\") for default_device");
+    check(std::strcmp(parakeet_capi_default_device(), "cpu") == 0,
+          "default_device follows set_device(\"cpu\")");
+    check(parakeet_capi_set_device(nullptr) == 0, "set_device(NULL) for default_device");
+    setenv("PARAKEET_DEVICE", "cpu", 1);
+    check(std::strcmp(parakeet_capi_default_device(), "cpu") == 0,
+          "default_device honours PARAKEET_DEVICE=cpu");
+    setenv("PARAKEET_DEVICE", "definitely-not-a-real-device-9000", 1);
+    check(std::strcmp(parakeet_capi_default_device(), "cpu") == 0,
+          "an unknown PARAKEET_DEVICE reads as the cpu fallback");
+    unsetenv("PARAKEET_DEVICE");
+    std::printf("default device: %s\n", parakeet_capi_default_device());
 }
 
 static void model_checks(const char* path) {

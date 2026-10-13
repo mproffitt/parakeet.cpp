@@ -477,6 +477,13 @@ extern "C" int parakeet_capi_set_device(const char* device) {
     } catch (...) { g_load_error = "unknown error"; return 1; }
 }
 
+extern "C" const char* parakeet_capi_default_device(void) {
+    thread_local std::string name;
+    try { name = pk::default_device_name(); }
+    catch (...) { name = "cpu"; }
+    return name.c_str();
+}
+
 extern "C" int parakeet_capi_release_backend(void) {
     g_load_error.clear();
     try {

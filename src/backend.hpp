@@ -118,6 +118,11 @@ void set_device_request(const std::string& device);
 // not, `*names` lists the devices there are.
 bool device_known(const std::string& device, std::string* names);
 
+// The device a Backend created now would use, without creating one: the
+// requested device ("cpu" or a registry name), else the first GPU/iGPU, else
+// "cpu". An unknown name reads "cpu", which is what the backend falls back to.
+std::string default_device_name();
+
 // Register a host-backed graph input for the currently-active Backend::compute
 // build phase. Marks `t` as a ggml graph input and records that `nbytes` from
 // `host` must be copied into `t` AFTER the graph is allocated. Must be called

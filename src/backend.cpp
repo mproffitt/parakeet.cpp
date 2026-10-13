@@ -117,6 +117,21 @@ bool device_known(const std::string& device, std::string* names) {
     return false;
 }
 
+std::string default_device_name() {
+    const std::string want = requested_device();
+    if (iequals(want, "cpu")) return "cpu";
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        const char* name = ggml_backend_dev_name(dev);
+        const auto type = ggml_backend_dev_type(dev);
+        const bool selected = !want.empty()
+            ? name && iequals(want, name)
+            : type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU;
+        if (selected && name) return name;
+    }
+    return "cpu";
+}
+
 Backend::Backend(int n_threads, bool cpu_only) : impl_(new Impl()) {
     // Optional override via parakeet_capi_set_device, else PARAKEET_DEVICE:
     //   - "cpu"            forces the CPU backend (CPU baseline on a GPU box).
